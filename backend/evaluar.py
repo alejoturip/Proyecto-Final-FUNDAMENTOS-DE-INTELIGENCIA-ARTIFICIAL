@@ -171,6 +171,31 @@ def main():
         encabezado + reporte, encoding="utf-8"
     )
 
+    # --- Métricas en JSON (las consume el endpoint /metricas del backend) ---
+    reporte_dict = classification_report(
+        y_real, y_predicho, labels=list(range(len(clases))),
+        target_names=clases, zero_division=0, output_dict=True,
+    )
+    por_clase = [
+        {
+            "raza": raza,
+            "precision": round(reporte_dict[raza]["precision"], 3),
+            "recall": round(reporte_dict[raza]["recall"], 3),
+            "f1": round(reporte_dict[raza]["f1-score"], 3),
+            "soporte": int(reporte_dict[raza]["support"]),
+        }
+        for raza in clases
+    ]
+    metricas = {
+        "accuracy": round(exactitud, 4),
+        "n_validacion": int(len(y_real)),
+        "macro_f1": round(reporte_dict["macro avg"]["f1-score"], 3),
+        "por_clase": por_clase,
+    }
+    (CARPETA_MODELO / "metricas.json").write_text(
+        json.dumps(metricas, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
     # --- Matriz de confusión en imagen ---
     ruta_png = guardar_matriz(y_real, y_predicho, clases)
 

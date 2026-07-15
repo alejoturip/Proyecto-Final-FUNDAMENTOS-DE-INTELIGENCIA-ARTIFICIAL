@@ -270,12 +270,20 @@ def main():
     print("\n  Copiando imágenes por raza:")
     for clave, origenes in mapa.items():
         if not origenes:
-            # Sin coincidencia en Stanford: carpeta vacía + aviso para aporte manual.
+            # Sin coincidencia en Stanford. Si la carpeta ya tiene fotos (p. ej.
+            # bajadas antes con completar_razas.py), se RESPETAN: re-ejecutar
+            # este script no debe borrar esas imágenes.
             destino = CARPETA_IMAGENES / clave
+            existentes = list(destino.glob("*.jpg")) if destino.exists() else []
+            if existentes:
+                resumen.append((clave, len(existentes), "ya presente (Commons)"))
+                print(f"    {clave:<22} -> {len(existentes):>3}   (ya presente, no se toca)")
+                continue
+
             destino.mkdir(parents=True, exist_ok=True)
             (destino / "LEEME_APORTAR.txt").write_text(
                 "Esta raza no está en Stanford Dogs.\n"
-                "Coloca aquí ~150 fotos (jpg) de esta raza y borra este archivo.\n",
+                "Ejecuta completar_razas.py o coloca aquí ~150 fotos (jpg) y borra este archivo.\n",
                 encoding="utf-8",
             )
             faltantes.append(clave)

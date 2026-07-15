@@ -19,6 +19,7 @@ Estructura esperada de las imágenes (el nombre de cada carpeta es la etiqueta):
     ...
 """
 
+import argparse
 import json
 from pathlib import Path
 
@@ -39,9 +40,19 @@ TAMANO_IMAGEN = (224, 224)  # tamaño nativo de MobileNetV2
 # sin memoria, bajar a 16.
 TAMANO_LOTE = 32
 
-# Cuántas veces la red ve el dataset completo.
-EPOCAS_CONGELADO = 10   # etapa 1: solo se entrena la cabeza
-EPOCAS_AJUSTE_FINO = 8  # etapa 2: se descongela la parte alta de MobileNetV2
+# Cuántas veces la red ve el dataset completo. Son VALORES POR DEFECTO: se
+# pueden cambiar al ejecutar (ver los parámetros --epocas-* más abajo).
+EPOCAS_CONGELADO = 10    # etapa 1: solo se entrena la cabeza
+EPOCAS_AJUSTE_FINO = 12  # etapa 2: se descongela la parte alta de MobileNetV2
+
+# Cuántas capas del final de MobileNetV2 se descongelan en la etapa 2.
+# Más capas = el modelo se adapta más a los perros, pero tarda más y puede
+# sobreajustar. 60 es un buen equilibrio.
+CAPAS_DESCONGELADAS = 60
+
+# Learning rates por defecto de cada etapa.
+LR_CABEZA = 1e-3   # alto: la cabeza arranca de cero
+LR_AJUSTE = 1e-5   # 100x más chico: no destruir los pesos de ImageNet
 
 # Qué porcentaje de las imágenes se aparta para validar (no se entrena con ellas).
 PORCENTAJE_VALIDACION = 0.2
@@ -49,7 +60,7 @@ PORCENTAJE_VALIDACION = 0.2
 SEMILLA = 123  # fija el azar para que el experimento sea reproducible
 
 
-def cargar_datos():
+def cargar_datos(tamano_lote=TAMANO_LOTE):
     """
     Construye los conjuntos de entrenamiento y validación desde las carpetas.
 
@@ -68,7 +79,7 @@ def cargar_datos():
         subset="training",
         seed=SEMILLA,
         image_size=TAMANO_IMAGEN,
-        batch_size=TAMANO_LOTE,
+        batch_size=tamano_lote,
         label_mode="categorical",
     )
 
@@ -78,7 +89,7 @@ def cargar_datos():
         subset="validation",
         seed=SEMILLA,
         image_size=TAMANO_IMAGEN,
-        batch_size=TAMANO_LOTE,
+        batch_size=tamano_lote,
         label_mode="categorical",
     )
 
@@ -146,17 +157,26 @@ def construir_modelo(cantidad_clases: int):
     return modelo, base
 
 
-def entrenar():
-    entrenamiento, validacion, clases = cargar_datos()
+def entrenar(epocas_cabeza=EPOCAS_CONGELADO, epocas_ajuste=EPOCAS_AJUSTE_FINO,
+             tamano_lote=TAMANO_LOTE, lr_cabeza=LR_CABEZA, lr_ajuste=LR_AJUSTE,
+             capas_descongeladas=CAPAS_DESCONGELADAS):
+    """
+    Entrena el modelo en dos etapas. Todos los parámetros son configurables
+    (ver los argumentos de línea de comando en __main__).
+    """
+    print("[entrenamiento] Parámetros:")
+    print(f"  épocas cabeza={epocas_cabeza}  épocas ajuste={epocas_ajuste}  batch={tamano_lote}")
+    print(f"  lr cabeza={lr_cabeza}  lr ajuste={lr_ajuste}  capas descongeladas={capas_descongeladas}")
+
+    entrenamiento, validacion, clases = cargar_datos(tamano_lote)
     print(f"\n[entrenamiento] {len(clases)} razas detectadas: {clases}\n")
 
     modelo, base = construir_modelo(len(clases))
 
     # ---------------- Etapa 1: cabeza nueva, base congelada ----------------
-    # Learning rate "normal" (1e-3): la cabeza empieza desde cero y necesita
-    # avanzar rápido.
+    # Learning rate "normal": la cabeza empieza desde cero y necesita avanzar rápido.
     modelo.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=lr_cabeza),
         loss="categorical_crossentropy",
         metrics=["accuracy"],
     )
@@ -164,43 +184,42 @@ def entrenar():
     print("=" * 60)
     print("ETAPA 1 - Entrenando solo la cabeza (base congelada)")
     print("=" * 60)
-    modelo.fit(
+    historia1 = modelo.fit(
         entrenamiento,
         validation_data=validacion,
-        epochs=EPOCAS_CONGELADO,
+        epochs=epocas_cabeza,
     )
 
     # ---------------- Etapa 2: ajuste fino ----------------
-    # Se descongelan las últimas 40 capas de MobileNetV2 para que se adapten
-    # a las particularidades de los perros. Las primeras siguen congeladas
-    # porque detectan bordes y texturas genéricos que ya están bien.
+    # Se descongelan las últimas N capas de MobileNetV2 para que se adapten a
+    # las particularidades de los perros. Las primeras siguen congeladas porque
+    # detectan bordes y texturas genéricos que ya están bien.
     base.trainable = True
-    for capa in base.layers[:-40]:
+    for capa in base.layers[:-capas_descongeladas]:
         capa.trainable = False
 
-    # Learning rate 100 veces más pequeño (1e-5). Con un valor alto se
-    # destruirían los pesos de ImageNet en la primera época: sería como
-    # borrar todo lo que la red ya sabía.
+    # Learning rate mucho más pequeño. Con un valor alto se destruirían los
+    # pesos de ImageNet en la primera época: sería como borrar lo ya aprendido.
     modelo.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=lr_ajuste),
         loss="categorical_crossentropy",
         metrics=["accuracy"],
     )
 
     print("=" * 60)
-    print("ETAPA 2 - Ajuste fino (últimas 40 capas descongeladas)")
+    print(f"ETAPA 2 - Ajuste fino (últimas {capas_descongeladas} capas descongeladas)")
     print("=" * 60)
-    modelo.fit(
+    historia2 = modelo.fit(
         entrenamiento,
         validation_data=validacion,
-        epochs=EPOCAS_AJUSTE_FINO,
+        epochs=epocas_ajuste,
         callbacks=[
             # Detiene el entrenamiento si la validación deja de mejorar durante
-            # 3 épocas seguidas, y recupera los mejores pesos. Evita entrenar
-            # de más y caer en overfitting.
+            # 4 épocas seguidas, y recupera los mejores pesos. Evita entrenar de
+            # más y caer en overfitting.
             tf.keras.callbacks.EarlyStopping(
                 monitor="val_accuracy",
-                patience=3,
+                patience=4,
                 restore_best_weights=True,
             )
         ],
@@ -217,8 +236,71 @@ def entrenar():
         encoding="utf-8",
     )
 
-    print("\n[entrenamiento] Listo. Modelo guardado en backend/modelo/")
+    # Historial de métricas por época: lo usa el endpoint /metricas del backend
+    # para mostrar en la app cómo evolucionó el entrenamiento (requisito de la
+    # rúbrica: "mostrar métricas del entrenamiento").
+    guardar_historial(historia1, historia2, {
+        "epocas_cabeza": epocas_cabeza,
+        "epocas_ajuste": epocas_ajuste,
+        "tamano_lote": tamano_lote,
+        "lr_cabeza": lr_cabeza,
+        "lr_ajuste": lr_ajuste,
+        "capas_descongeladas": capas_descongeladas,
+        "num_razas": len(clases),
+    })
+
+    print("\n[entrenamiento] Listo. Modelo e historial guardados en backend/modelo/")
+
+
+def guardar_historial(historia1, historia2, config):
+    """Junta las métricas por época de ambas etapas y las guarda en un JSON."""
+    def a_lista(historia, etapa):
+        filas = []
+        h = historia.history
+        for i in range(len(h["accuracy"])):
+            filas.append({
+                "etapa": etapa,
+                "epoca": i + 1,
+                "accuracy": round(float(h["accuracy"][i]), 4),
+                "loss": round(float(h["loss"][i]), 4),
+                "val_accuracy": round(float(h["val_accuracy"][i]), 4),
+                "val_loss": round(float(h["val_loss"][i]), 4),
+            })
+        return filas
+
+    epocas = a_lista(historia1, 1) + a_lista(historia2, 2)
+    mejor_val = max(fila["val_accuracy"] for fila in epocas)
+    datos = {
+        "config": config,
+        "mejor_val_accuracy": mejor_val,
+        "epocas": epocas,
+    }
+    (CARPETA_MODELO / "historial_entrenamiento.json").write_text(
+        json.dumps(datos, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
 
 if __name__ == "__main__":
-    entrenar()
+    analizador = argparse.ArgumentParser(description="Entrena el detector de razas (parámetros configurables).")
+    analizador.add_argument("--epocas-cabeza", type=int, default=EPOCAS_CONGELADO,
+                            help=f"Épocas de la etapa 1 (por defecto {EPOCAS_CONGELADO}).")
+    analizador.add_argument("--epocas-ajuste", type=int, default=EPOCAS_AJUSTE_FINO,
+                            help=f"Épocas de la etapa 2 / ajuste fino (por defecto {EPOCAS_AJUSTE_FINO}).")
+    analizador.add_argument("--batch", type=int, default=TAMANO_LOTE,
+                            help=f"Tamaño de lote / batch size (por defecto {TAMANO_LOTE}).")
+    analizador.add_argument("--lr-cabeza", type=float, default=LR_CABEZA,
+                            help=f"Learning rate de la etapa 1 (por defecto {LR_CABEZA}).")
+    analizador.add_argument("--lr-ajuste", type=float, default=LR_AJUSTE,
+                            help=f"Learning rate del ajuste fino (por defecto {LR_AJUSTE}).")
+    analizador.add_argument("--capas", type=int, default=CAPAS_DESCONGELADAS,
+                            help=f"Capas a descongelar en la etapa 2 (por defecto {CAPAS_DESCONGELADAS}).")
+    args = analizador.parse_args()
+
+    entrenar(
+        epocas_cabeza=args.epocas_cabeza,
+        epocas_ajuste=args.epocas_ajuste,
+        tamano_lote=args.batch,
+        lr_cabeza=args.lr_cabeza,
+        lr_ajuste=args.lr_ajuste,
+        capas_descongeladas=args.capas,
+    )

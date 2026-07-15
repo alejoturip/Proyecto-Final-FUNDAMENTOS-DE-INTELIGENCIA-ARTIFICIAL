@@ -26,10 +26,11 @@ CARPETA = Path(__file__).parent
 
 # (etiqueta, script, argumentos). El orden importa: cada paso depende del anterior.
 PASOS = [
-    ("Preparar dataset (Stanford Dogs)", "preparar_datos.py", ["--por-clase", "150"]),
+    ("Preparar dataset (Stanford Dogs)", "preparar_datos.py", ["--por-clase", "250"]),
     ("Completar razas (Wikimedia Commons)", "completar_razas.py", ["--por-clase", "150"]),
     ("Entrenar el modelo", "entrenamiento.py", []),
     ("Evaluar el modelo", "evaluar.py", []),
+    ("Convertir a TensorFlow Lite", "convertir_tflite.py", []),
 ]
 
 

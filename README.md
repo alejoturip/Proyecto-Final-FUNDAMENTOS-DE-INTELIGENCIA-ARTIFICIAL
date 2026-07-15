@@ -20,18 +20,52 @@ Antes de programar nada, lee **[ARQUITECTURA.md](ARQUITECTURA.md)**.
 ## Estado actual
 
 - [x] **Fase 1** — Arquitectura y esqueleto
-- [~] **Fase 2** — Dataset: script `preparar_datos.py` listo. Falta ejecutarlo
-  y aportar a mano 5 razas que no están en Stanford Dogs (ver abajo).
-- [ ] **Fase 3** — Entrenamiento
-- [ ] Fases 4 a 8
+- [x] **Fase 2** — Dataset: 25 razas (21 de Stanford Dogs + 4 de Wikimedia Commons)
+- [x] **Fase 3** — Entrenamiento (MobileNetV2, Transfer Learning en 2 etapas)
+- [x] **Fase 4** — Evaluación: matriz de confusión + precision/recall/F1 (~90% accuracy)
+- [x] **Fase 5** — Backend funcionando (FastAPI + modelo TFLite)
+- [x] **Fase 6** — Frontend conectado
+- [~] **Fase 7** — Despliegue (Netlify + Render)
+- [ ] **Fase 8** — Informe y defensa
 
-> El backend **todavía no arranca**: `prediccion.py` busca
-> `backend/modelo/modelo_razas.keras` y ese archivo no existe hasta ejecutar
-> el entrenamiento. Es lo esperado en esta fase.
+> ⚠️ **Versión de Python.** TensorFlow no existe para Python 3.14. Usa
+> **Python 3.12** para el backend (en Render: variable `PYTHON_VERSION=3.12.10`).
+> Comprueba con `python --version` antes de crear el `venv`.
 
-> ⚠️ **Versión de Python.** TensorFlow no existe aún para Python 3.14. Usa
-> **Python 3.11, 3.12 o 3.13** para el backend. Comprueba con `python --version`
-> antes de crear el `venv`. (El frontend no depende de Python.)
+### Cómo se generó el modelo (una vez, en la laptop)
+
+```bash
+cd backend
+python ejecutar_todo.py    # dataset -> completar razas -> entrenar -> evaluar -> TFLite
+```
+
+O paso por paso: `preparar_datos.py` → `completar_razas.py` → `entrenamiento.py`
+→ `evaluar.py` → `convertir_tflite.py`.
+
+**Entrenamiento con parámetros configurables:**
+
+```bash
+python entrenamiento.py --help          # ver todos los parámetros
+python entrenamiento.py --epocas-ajuste 15 --batch 16 --capas 80
+```
+
+### Rutas de la API
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `GET` | `/` | Estado del servicio (si el modelo cargó) |
+| `GET` | `/razas` | Ficha de las 25 razas |
+| `POST` | `/predecir` | Recibe una imagen y devuelve la predicción |
+| `GET` | `/metricas` | Métricas del modelo (accuracy, precision/recall/F1, historial) |
+| `GET` | `/matriz-confusion` | Imagen PNG de la matriz de confusión |
+| `GET` | `/docs` | Documentación interactiva (probar la API sin React) |
+
+### Producción: TensorFlow Lite
+
+El servidor **no** usa TensorFlow completo (no entra en los 512 MB de Render).
+El modelo se convierte a `.tflite` (~2 MB) con `convertir_tflite.py` y se sirve
+con el runtime liviano `ai-edge-litert`. Ver `requirements.txt` (producción) vs
+`requirements-desarrollo.txt` (entrenamiento y evaluación).
 
 ---
 

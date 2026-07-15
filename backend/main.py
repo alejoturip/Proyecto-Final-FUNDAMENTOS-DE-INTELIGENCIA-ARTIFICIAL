@@ -15,13 +15,19 @@ Se ejecuta con:  uvicorn main:app --reload
   - uvicorn  = el servidor web que ejecuta la aplicación
 """
 
+import json
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 import prediccion
+
+# Carpeta donde el entrenamiento deja el modelo y sus métricas.
+CARPETA_MODELO = Path(__file__).parent / "modelo"
 
 # Tamaño máximo aceptado por imagen: 5 MB.
 # Sin este límite, cualquiera podría enviar un archivo de 2 GB y tumbar el servidor.
@@ -90,6 +96,40 @@ def estado():
 def listar_razas():
     """Devuelve la ficha de todas las razas que el modelo puede reconocer."""
     return prediccion.informacion_razas
+
+
+@app.get("/metricas")
+def obtener_metricas():
+    """
+    Devuelve las métricas del modelo para mostrarlas dentro de la app:
+      - evaluacion: accuracy global, F1 y precision/recall/F1 por raza
+        (lo genera evaluar.py en modelo/metricas.json).
+      - entrenamiento: accuracy y loss de cada época (modelo/historial_entrenamiento.json).
+
+    Cumple el requisito de la rúbrica "mostrar métricas del entrenamiento".
+    """
+    ruta_evaluacion = CARPETA_MODELO / "metricas.json"
+    ruta_historial = CARPETA_MODELO / "historial_entrenamiento.json"
+
+    if not ruta_evaluacion.exists():
+        raise HTTPException(
+            status_code=503,
+            detail="Métricas no disponibles. Ejecuta el entrenamiento y la evaluación primero.",
+        )
+
+    respuesta = {"evaluacion": json.loads(ruta_evaluacion.read_text(encoding="utf-8"))}
+    if ruta_historial.exists():
+        respuesta["entrenamiento"] = json.loads(ruta_historial.read_text(encoding="utf-8"))
+    return respuesta
+
+
+@app.get("/matriz-confusion")
+def obtener_matriz_confusion():
+    """Devuelve la imagen PNG de la matriz de confusión generada al evaluar."""
+    ruta = CARPETA_MODELO / "matriz_confusion.png"
+    if not ruta.exists():
+        raise HTTPException(status_code=404, detail="Matriz de confusión no disponible.")
+    return FileResponse(ruta, media_type="image/png")
 
 
 @app.post("/predecir")

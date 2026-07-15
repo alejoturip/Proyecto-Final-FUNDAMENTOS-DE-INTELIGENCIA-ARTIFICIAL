@@ -20,6 +20,8 @@ import {
   Weight,
   Ruler,
   Zap,
+  BarChart3,
+  X,
 } from "lucide-react";
 
 // La URL del backend NUNCA se escribe fija en el código: cambia entre
@@ -42,6 +44,11 @@ export default function Aplicacion() {
   const [resultado, setResultado] = useState(null);
   const [error, setError] = useState(null);
   const [arrastrando, setArrastrando] = useState(false);
+
+  // Métricas del modelo (requisito de la rúbrica: mostrarlas dentro de la app).
+  const [metricas, setMetricas] = useState(null);
+  const [mostrarMetricas, setMostrarMetricas] = useState(false);
+  const [cargandoMetricas, setCargandoMetricas] = useState(false);
 
   function seleccionarArchivo(nuevoArchivo) {
     if (!nuevoArchivo) return;
@@ -105,6 +112,26 @@ export default function Aplicacion() {
     setVistaPrevia(null);
     setResultado(null);
     setError(null);
+  }
+
+  /**
+   * Trae las métricas del modelo desde el backend (endpoint /metricas) y abre
+   * el panel. Solo las pide una vez; después reutiliza lo cargado.
+   */
+  async function verMetricas() {
+    setMostrarMetricas(true);
+    if (metricas || cargandoMetricas) return;
+
+    setCargandoMetricas(true);
+    try {
+      const respuesta = await fetch(`${URL_API}/metricas`);
+      if (!respuesta.ok) throw new Error("El modelo aún no tiene métricas generadas.");
+      setMetricas(await respuesta.json());
+    } catch (fallo) {
+      setMetricas({ error: fallo.message });
+    } finally {
+      setCargandoMetricas(false);
+    }
   }
 
   return (
@@ -297,10 +324,128 @@ export default function Aplicacion() {
           </section>
         )}
 
+        {/* Acceso a las métricas del modelo */}
+        <div className="mt-8 text-center">
+          <button
+            onClick={verMetricas}
+            className="border-niebla text-grafito hover:border-pino hover:text-pino inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-xs font-medium transition-colors"
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            Ver métricas del modelo
+          </button>
+        </div>
+
         <footer className="text-grafito mt-12 text-center text-xs">
           MobileNetV2 · Transfer Learning · 25 razas
         </footer>
       </div>
+
+      {/* ---------------- Panel de métricas del modelo ---------------- */}
+      {mostrarMetricas && (
+        <div
+          className="bg-tinta/40 fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 backdrop-blur-sm sm:p-8"
+          onClick={() => setMostrarMetricas(false)}
+        >
+          <div
+            className="bg-lienzo animate-aparecer w-full max-w-2xl rounded-3xl p-6 shadow-xl sm:p-8"
+            onClick={(evento) => evento.stopPropagation()}
+          >
+            <div className="mb-5 flex items-center justify-between">
+              <h2 className="font-display text-2xl font-bold">Métricas del modelo</h2>
+              <button
+                onClick={() => setMostrarMetricas(false)}
+                aria-label="Cerrar"
+                className="text-grafito hover:text-tinta rounded-lg p-1 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {cargandoMetricas ? (
+              <div className="text-grafito flex items-center justify-center gap-2 py-16 text-sm">
+                <Loader2 className="h-4 w-4 animate-spin" /> Cargando métricas...
+              </div>
+            ) : metricas?.error ? (
+              <p className="text-grafito py-10 text-center text-sm">{metricas.error}</p>
+            ) : metricas ? (
+              <div className="space-y-6">
+                {/* Resumen numérico */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="bg-papel rounded-2xl p-4 text-center">
+                    <p className="font-dato text-ambar text-2xl font-bold">
+                      {(metricas.evaluacion.accuracy * 100).toFixed(1)}%
+                    </p>
+                    <p className="text-grafito mt-1 text-[11px] uppercase tracking-wide">Precisión global</p>
+                  </div>
+                  <div className="bg-papel rounded-2xl p-4 text-center">
+                    <p className="font-dato text-pino text-2xl font-bold">
+                      {metricas.evaluacion.macro_f1.toFixed(2)}
+                    </p>
+                    <p className="text-grafito mt-1 text-[11px] uppercase tracking-wide">F1 promedio</p>
+                  </div>
+                  <div className="bg-papel rounded-2xl p-4 text-center">
+                    <p className="font-dato text-2xl font-bold">{metricas.evaluacion.n_validacion}</p>
+                    <p className="text-grafito mt-1 text-[11px] uppercase tracking-wide">Imgs. validación</p>
+                  </div>
+                </div>
+
+                {/* Parámetros del entrenamiento (requisito: configurar parámetros) */}
+                {metricas.entrenamiento?.config && (
+                  <p className="text-grafito text-center text-xs">
+                    Entrenado con {metricas.entrenamiento.config.epocas_cabeza}+
+                    {metricas.entrenamiento.config.epocas_ajuste} épocas · batch{" "}
+                    {metricas.entrenamiento.config.tamano_lote} · {metricas.entrenamiento.config.capas_descongeladas} capas ajustadas
+                  </p>
+                )}
+
+                {/* Matriz de confusión */}
+                <div>
+                  <p className="font-dato text-grafito mb-2 text-[11px] uppercase tracking-[0.2em]">
+                    Matriz de confusión
+                  </p>
+                  <div className="border-niebla overflow-x-auto rounded-2xl border p-2">
+                    <img
+                      src={`${URL_API}/matriz-confusion`}
+                      alt="Matriz de confusión del modelo"
+                      className="mx-auto max-w-none sm:max-w-full"
+                      style={{ minWidth: "480px" }}
+                    />
+                  </div>
+                </div>
+
+                {/* Tabla por raza */}
+                <div>
+                  <p className="font-dato text-grafito mb-2 text-[11px] uppercase tracking-[0.2em]">
+                    Precisión por raza
+                  </p>
+                  <div className="border-niebla max-h-64 overflow-y-auto rounded-2xl border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-papel text-grafito sticky top-0 text-[11px] uppercase">
+                        <tr>
+                          <th className="p-2 text-left font-medium">Raza</th>
+                          <th className="p-2 text-right font-medium">Precision</th>
+                          <th className="p-2 text-right font-medium">Recall</th>
+                          <th className="p-2 text-right font-medium">F1</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {metricas.evaluacion.por_clase.map((fila) => (
+                          <tr key={fila.raza} className="border-niebla border-t">
+                            <td className="p-2">{fila.raza}</td>
+                            <td className="font-dato p-2 text-right">{fila.precision.toFixed(2)}</td>
+                            <td className="font-dato p-2 text-right">{fila.recall.toFixed(2)}</td>
+                            <td className="font-dato p-2 text-right">{fila.f1.toFixed(2)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
