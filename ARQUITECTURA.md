@@ -28,7 +28,7 @@ detector-razas/
 │       ├── border_collie/
 │       └── ... (25 carpetas x ~150 fotos)
 │
-└── frontend/                Todo lo que corre en el navegador (se despliega en Vercel)
+└── frontend/                Todo lo que corre en el navegador (se despliega en Netlify)
     ├── index.html           La página que carga React
     ├── package.json         Dependencias de JavaScript
     ├── vite.config.js       Configuración de Vite
@@ -52,7 +52,7 @@ guardan archivos binarios, no código.
 | `backend/` | Se despliega en un servidor distinto (Render) que el frontend. Son dos aplicaciones independientes. |
 | `backend/modelo/` | Separa los artefactos generados por el entrenamiento del código fuente. Permite `.gitignore` selectivo. |
 | `backend/imagenes/` | Keras exige que las etiquetas sean nombres de carpetas. La estructura de carpetas **es** el dataset etiquetado. |
-| `frontend/` | Se compila a HTML/CSS/JS estático y se sirve desde Vercel. |
+| `frontend/` | Se compila a HTML/CSS/JS estático y se sirve desde Netlify. |
 | `frontend/fuente/` | Vite necesita separar el código fuente de la salida compilada (`dist/`). Es `src` renombrado al español. |
 
 ### Por qué cada archivo del backend existe
@@ -75,7 +75,7 @@ Son **dos programas distintos, en dos servidores distintos**, que solo se
 conocen por una URL. No comparten memoria, ni variables, ni sesión.
 
 ```
-NAVEGADOR (Vercel)                            SERVIDOR (Render)
+NAVEGADOR (Netlify)                            SERVIDOR (Render)
 ┌───────────────────────┐                     ┌────────────────────────┐
 │  aplicacion.jsx       │   POST /predecir    │  main.py               │
 │                       │ ──────────────────► │                        │
@@ -144,7 +144,7 @@ NAVEGADOR (Vercel)                            SERVIDOR (Render)
          ▼
   ═══════════════ CRUZA INTERNET ═══════════════
          ▼
-  5. El navegador pregunta antes: "¿Render acepta peticiones de Vercel?"
+  5. El navegador pregunta antes: "¿Render acepta peticiones de Netlify?"
          │  CORSMiddleware responde que sí (si no, todo muere aquí)
          ▼
   6. FastAPI recibe la petición en POST /predecir
@@ -213,7 +213,7 @@ significan nada. Perder ese archivo = predicciones cruzadas silenciosas.
 
 ### CORS
 
-El navegador bloquea por defecto que `mi-app.vercel.app` llame a
+El navegador bloquea por defecto que `mi-app.netlify.app` llame a
 `mi-api.onrender.com`: son orígenes distintos. `CORSMiddleware` es el permiso
 explícito. **No es opcional**, y no aparece cuando pruebas con `/docs` (ahí no
 hay cruce de origen), solo cuando conectas React. Es la causa nº 1 de "en local
@@ -261,5 +261,5 @@ TFLite" es material excelente para el apartado de Resultados de la exposición.
 | **4** | Evaluación: matriz de confusión, precision, recall, F1 |
 | **5** | Backend funcionando en local y probado desde `/docs` |
 | **6** | Frontend conectado |
-| **7** | Despliegue en Render + Vercel |
+| **7** | Despliegue en Render + Netlify |
 | **8** | Defensa: introducción, objetivos, estado del arte, conclusiones y batería de preguntas difíciles |

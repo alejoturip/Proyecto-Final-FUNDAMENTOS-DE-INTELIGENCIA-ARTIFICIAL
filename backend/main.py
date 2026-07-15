@@ -64,7 +64,7 @@ app = FastAPI(
 # CORS
 # --------------------------------------------------------------------
 # El navegador BLOQUEA por seguridad las peticiones entre dominios distintos.
-# El frontend vivirá en Vercel (https://mi-app.vercel.app) y el backend en
+# El frontend vivirá en Netlify (https://mi-app.netlify.app) y el backend en
 # Render (https://mi-api.onrender.com): son dominios diferentes.
 # Este middleware le dice al navegador "confío en ese origen, déjalo pasar".
 # Sin esto, React recibiría un error de CORS y jamás vería la respuesta.
