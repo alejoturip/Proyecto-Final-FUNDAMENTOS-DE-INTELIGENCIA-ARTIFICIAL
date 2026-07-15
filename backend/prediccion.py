@@ -7,8 +7,17 @@ Este archivo NO sabe nada de HTTP, ni de FastAPI, ni de React.
 Su única responsabilidad es: recibir los bytes de una imagen y devolver
 un diccionario de Python con las predicciones.
 
-Separarlo de main.py permite probar el modelo desde una terminal, sin
-levantar el servidor.
+Usa el modelo en formato **TensorFlow Lite** (modelo_razas.tflite), no el
+TensorFlow completo. Motivo: en producción (Render, 512 MB de RAM) TensorFlow
+entero no entra y el servicio se cae por falta de memoria. LiteRT corre el mismo
+modelo con un runtime de pocos MB y ~150 MB de RAM. Ver convertir_tflite.py.
+
+El intérprete se importa de forma flexible:
+  - En el servidor (Render/Linux) se usa `ai-edge-litert`, el runtime liviano
+    oficial de TensorFlow Lite (lo instala requirements.txt).
+  - En la laptop de desarrollo, si ese paquete no está pero sí TensorFlow
+    completo, se usa `tensorflow.lite`. Así el backend se puede probar en local
+    sin instalar nada extra.
 """
 
 import io
@@ -16,79 +25,81 @@ import json
 from pathlib import Path
 
 import numpy as np
-import tensorflow as tf
 from PIL import Image
+
+# El intérprete de TFLite: liviano en producción, con respaldo en desarrollo.
+try:
+    from ai_edge_litert.interpreter import Interpreter
+except ImportError:  # solo pasa en la laptop, que tiene TensorFlow completo
+    import tensorflow as tf
+    Interpreter = tf.lite.Interpreter
 
 # --------------------------------------------------------------------
 # Rutas
 # --------------------------------------------------------------------
-# Path(__file__).parent = la carpeta donde está ESTE archivo (backend/).
-# Se usan rutas absolutas para que el backend funcione igual sin importar
-# desde qué carpeta se ejecute el comando (en local o en Render).
 CARPETA_BACKEND = Path(__file__).parent
-RUTA_MODELO = CARPETA_BACKEND / "modelo" / "modelo_razas.keras"
+RUTA_MODELO = CARPETA_BACKEND / "modelo" / "modelo_razas.tflite"
 RUTA_CLASES = CARPETA_BACKEND / "modelo" / "clases.json"
 RUTA_RAZAS = CARPETA_BACKEND / "razas.json"
 
 # El modelo fue entrenado con imágenes de 224x224 píxeles.
-# Toda imagen que llegue debe redimensionarse EXACTAMENTE a este tamaño.
 TAMANO_IMAGEN = (224, 224)
 
 # --------------------------------------------------------------------
 # Estado en memoria
 # --------------------------------------------------------------------
 # Se cargan una sola vez, cuando arranca el servidor, y quedan en RAM.
-# Cargar el modelo en cada petición tardaría varios segundos: sería un error grave.
-_modelo = None
+_interprete = None
 _clases: list[str] = []
+_detalle_entrada = None   # info del tensor de entrada del modelo (índice, forma)
+_detalle_salida = None    # info del tensor de salida
 
-# La ficha informativa de cada raza. Es un JSON pequeño, se lee siempre al importar.
+# La ficha informativa de cada raza. Es un JSON pequeño, se lee al importar.
 informacion_razas: dict = json.loads(RUTA_RAZAS.read_text(encoding="utf-8"))
 
 
 def cargar_modelo() -> None:
     """
-    Carga el modelo entrenado y la lista de clases en memoria.
+    Carga el modelo TFLite y la lista de clases en memoria.
 
     Se llama UNA sola vez, desde el arranque de FastAPI (ver main.py).
-    Las variables quedan a nivel de módulo, así que las siguientes
-    peticiones reutilizan el modelo ya cargado.
+    allocate_tensors() reserva la memoria que el modelo necesita para correr.
     """
-    global _modelo, _clases
+    global _interprete, _clases, _detalle_entrada, _detalle_salida
 
     if not RUTA_MODELO.exists():
         raise FileNotFoundError(
             f"No se encontró el modelo en {RUTA_MODELO}. "
-            "Ejecuta primero: python entrenamiento.py"
+            "Genéralo con: python entrenamiento.py && python convertir_tflite.py"
         )
 
-    _modelo = tf.keras.models.load_model(RUTA_MODELO)
+    _interprete = Interpreter(model_path=str(RUTA_MODELO))
+    _interprete.allocate_tensors()
+    _detalle_entrada = _interprete.get_input_details()[0]
+    _detalle_salida = _interprete.get_output_details()[0]
     _clases = json.loads(RUTA_CLASES.read_text(encoding="utf-8"))
 
-    print(f"[prediccion] Modelo cargado. {len(_clases)} razas disponibles.")
+    print(f"[prediccion] Modelo TFLite cargado. {len(_clases)} razas disponibles.")
 
 
 def modelo_listo() -> bool:
     """Indica si el modelo ya está en memoria. Lo usa el endpoint de salud."""
-    return _modelo is not None
+    return _interprete is not None
 
 
 def procesar_imagen(contenido: bytes) -> np.ndarray:
     """
-    Convierte los bytes crudos que llegan por HTTP en el tensor que espera Keras.
+    Convierte los bytes crudos que llegan por HTTP en el tensor que espera el modelo.
 
     Pasos:
       1. Abrir los bytes como imagen (Pillow).
-      2. Convertir a RGB (descarta transparencia de PNG y arregla imágenes en
-         escala de grises; el modelo siempre espera 3 canales).
+      2. Convertir a RGB (descarta transparencia y arregla escala de grises).
       3. Redimensionar a 224x224.
-      4. Convertir a un arreglo de NumPy de números decimales (0-255).
-      5. Agregar una dimensión al inicio: (224, 224, 3) -> (1, 224, 224, 3).
-         Keras siempre trabaja por lotes; aquí el lote es de una sola imagen.
+      4. Convertir a NumPy float32 (0-255).
+      5. Agregar la dimensión de lote: (224,224,3) -> (1,224,224,3).
 
-    Ojo: aquí NO se normaliza a valores entre -1 y 1. Esa normalización está
-    incluida DENTRO del modelo como una capa (ver entrenamiento.py). Así es
-    imposible que el entrenamiento y la predicción usen escalas distintas.
+    La normalización a valores entre -1 y 1 NO se hace aquí: está incluida
+    DENTRO del modelo como una capa (ver convertir_tflite.py / entrenamiento.py).
     """
     imagen = Image.open(io.BytesIO(contenido)).convert("RGB")
     imagen = imagen.resize(TAMANO_IMAGEN)
@@ -100,27 +111,18 @@ def predecir(contenido: bytes, cantidad_top: int = 3) -> dict:
     """
     Función principal del módulo: bytes de imagen -> resultado listo para JSON.
 
-    Devuelve un diccionario con esta forma:
-
-    {
-      "raza": "Border Collie",
-      "confianza": 94.31,
-      "informacion": { ...ficha de razas.json... },
-      "top": [
-        {"raza": "Border Collie", "confianza": 94.31},
-        {"raza": "Pastor Australiano", "confianza": 3.02},
-        {"raza": "Akita", "confianza": 0.91}
-      ]
-    }
+    Devuelve un diccionario con la raza ganadora, su confianza, la ficha de la
+    raza y el Top 3 de candidatas (misma forma que antes).
     """
-    if _modelo is None:
+    if _interprete is None:
         raise RuntimeError("El modelo no está cargado.")
 
     tensor = procesar_imagen(contenido)
 
-    # verbose=0 evita que Keras imprima una barra de progreso en cada petición.
-    # El resultado es un arreglo (1, 25): 25 probabilidades que suman 1.
-    probabilidades = _modelo.predict(tensor, verbose=0)[0]
+    # Correr el modelo: cargar la entrada, ejecutar y leer la salida.
+    _interprete.set_tensor(_detalle_entrada["index"], tensor)
+    _interprete.invoke()
+    probabilidades = _interprete.get_tensor(_detalle_salida["index"])[0]
 
     # argsort ordena de menor a mayor y devuelve ÍNDICES.
     # [::-1] invierte el orden y [:cantidad_top] toma los mejores.

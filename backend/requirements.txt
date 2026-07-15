@@ -1,7 +1,12 @@
-# IMPORTANTE: usar Python 3.11, 3.12 o 3.13.
-# TensorFlow todavía NO publica versiones para Python 3.14: con 3.14 este
-# archivo falla con "No matching distribution found for tensorflow-cpu".
-# Comprueba tu versión con:  python --version
+# Dependencias de PRODUCCIÓN (las que instala Render).
+# NO incluye TensorFlow completo: en el servidor solo se PREDICE, usando el
+# modelo en formato TFLite con un runtime liviano (ai-edge-litert). Así el
+# servicio entra en los 512 MB de RAM del plan gratuito de Render.
+#
+# El entrenamiento y la evaluación (que sí necesitan TensorFlow) se hacen en la
+# laptop con requirements-desarrollo.txt.
+#
+# IMPORTANTE: usar Python 3.11 o 3.12 (en Render, variable PYTHON_VERSION=3.12.10).
 
 # Servidor y API
 fastapi>=0.115,<1.0
@@ -12,7 +17,5 @@ python-multipart>=0.0.20    # necesario para recibir archivos (multipart/form-da
 pillow>=11.0
 numpy>=1.26,<2.2
 
-# Inteligencia Artificial
-# Se usa tensorflow-cpu (no tensorflow): pesa ~200 MB menos porque no trae
-# las librerías de GPU/CUDA, que ni la laptop ni Render van a usar.
-tensorflow-cpu>=2.18,<2.20
+# Inteligencia Artificial (solo inferencia): runtime liviano de TensorFlow Lite.
+ai-edge-litert>=1.0
