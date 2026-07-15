@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# El dataset NO se sube a Git: son miles de imágenes.
+imagenes/*/
+
+# El tar de Stanford Dogs y su extracción (~757 MB) que baja preparar_datos.py.
+descargas/
+
+# El modelo entrenado sí se sube (Render lo necesita), pero pesa ~15 MB.
+# Si GitHub se queja, usar Git LFS.

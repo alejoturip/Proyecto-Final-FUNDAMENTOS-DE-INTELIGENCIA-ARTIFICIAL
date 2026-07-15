@@ -1,0 +1,8 @@
+# Dependencias que SOLO se usan en la laptop para evaluar el modelo (Fase 4).
+# NO se instalan en Render: el servidor solo predice, no evalúa.
+#
+# Instalar (con el venv activado) antes de correr evaluar.py:
+#   pip install -r requirements-desarrollo.txt
+
+scikit-learn>=1.5      # classification_report y confusion_matrix (precision, recall, F1)
+matplotlib>=3.9        # dibuja la matriz de confusión y la guarda como PNG

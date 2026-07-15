@@ -1,0 +1,35 @@
+REPORTE DE EVALUACIÓN - Detector de razas
+Imágenes de validación: 750
+Exactitud global (accuracy): 90.27%
+================================================================
+                     precision    recall  f1-score   support
+
+              akita      1.000     0.794     0.885        34
+             beagle      0.903     1.000     0.949        28
+      border_collie      0.833     0.938     0.882        32
+              boxer      0.960     0.857     0.906        28
+    bulldog_frances      0.862     1.000     0.926        25
+     bulldog_ingles      0.667     0.970     0.790        33
+            caniche      1.000     0.955     0.977        22
+          chihuahua      0.893     0.833     0.862        30
+          chow_chow      0.939     0.969     0.954        32
+     cocker_spaniel      0.938     1.000     0.968        30
+          dachshund      1.000     0.758     0.862        33
+           doberman      0.931     0.871     0.900        31
+   golden_retriever      0.760     0.950     0.844        20
+         gran_danes      0.967     0.829     0.892        35
+    husky_siberiano      0.958     0.958     0.958        24
+ labrador_retriever      0.760     0.792     0.776        24
+      pastor_aleman      1.000     0.974     0.987        38
+ pastor_australiano      0.833     0.658     0.735        38
+          pomerania      0.968     0.938     0.952        32
+                pug      0.913     0.778     0.840        27
+         rottweiler      0.881     1.000     0.937        37
+       san_bernardo      0.943     1.000     0.971        33
+schnauzer_miniatura      0.964     0.900     0.931        30
+           shih_tzu      0.880     0.957     0.917        23
+  yorkshire_terrier      0.968     0.968     0.968        31
+
+           accuracy                          0.903       750
+          macro avg      0.909     0.906     0.903       750
+       weighted avg      0.912     0.903     0.902       750
